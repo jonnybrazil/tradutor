@@ -117,8 +117,17 @@ function postar(obj){
 function publicar(){
   var x=ta.value.trim();
   if(!x) return;
-  pararDitado();
-  postar({action:'add',x:x}).then(function(){ ta.value=''; ta.focus(); setTimeout(carregar,300); });
+  postar({action:'add',x:x}).then(function(){
+    ta.value='';
+    if(ditando){
+      /* o ditado continua: limpa o texto ja publicado e abre uma sessao nova */
+      base=''; sessaoFinal=''; ultimoFinalAnterior=''; primeiroFinal=true;
+      try{ rec.stop(); }catch(e){}
+    }
+    /* no celular, nao rouba o foco para o teclado nao subir */
+    if(!('ontouchstart' in window)) ta.focus();
+    setTimeout(carregar,300);
+  });
 }
 
 function mudarEstado(e){
@@ -247,8 +256,8 @@ function novaSessao(){
           /* o Chrome reenvia a ultima frase quando reinicia a sessao */
           if(nu && nt===nu) continue;
           if(nu && nt.indexOf(nu)===0){
-            var i=t.toLowerCase().indexOf(ultimoFinalAnterior.toLowerCase());
-            if(i===0){
+            var pos=t.toLowerCase().indexOf(ultimoFinalAnterior.toLowerCase());
+            if(pos===0){
               t=t.slice(ultimoFinalAnterior.length);
               if(!norm(t)) continue;
               nt=norm(t);
@@ -264,18 +273,20 @@ function novaSessao(){
         if(ntxt && ntxt.indexOf(nt)===0) continue;
         txt=juntar(txt,t);
       } else {
-        par=juntar(par,t);
+        /* o Chrome cria um parcial novo a cada atualizacao da mesma frase:
+           so o mais recente interessa */
+        par=t;
       }
     }
-    /* o Chrome as vezes devolve o mesmo trecho como parcial e como final */
+    /* o parcial pode repetir o final, ou ser um pedaco dele, ou ser o final incompleto */
     if(par && txt){
       var np=norm(par), nt=norm(txt);
-      if(np && nt && (np.indexOf(nt)===0 || nt.slice(-np.length)===np)) par='';
+      if(np && nt && (np.indexOf(nt)===0 || nt.indexOf(np)===0 || nt.slice(-np.length)===np)) par='';
     }
 
     /* se a lista de resultados recomecou no meio da sessao, guarda o que ja havia */
     var ntxtSessao=norm(sessaoFinal), nTxt=norm(txt);
-    if(ntxtSessao && nTxt && nTxt.indexOf(ntxtSessao)!==0){
+    if(ntxtSessao && (!nTxt || nTxt.indexOf(ntxtSessao)!==0)){
       base=juntar(base,sessaoFinal);
       sessaoFinal='';
     }
