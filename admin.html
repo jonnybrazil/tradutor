@@ -177,7 +177,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const mic = document.getElementById('mic');
 const idioma = document.getElementById('idioma');
 const ouvindo = document.getElementById('ouvindo');
-let rec=null, ditando=false, base='', finalizado='', tentativas=0;
+let rec=null, ditando=false, base='', sessaoFinal='', tentativas=0;
 
 if(!SR){
   mic.style.display='none';
@@ -190,27 +190,33 @@ function iniciarDitado(){
   if(!SR || ditando) return;
   base = ta.value;
   if(base && !/\s$/.test(base)) base += ' ';
-  finalizado='';
+  sessaoFinal='';
   tentativas=0;
+  ditando=true;
+  mic.textContent='Parar';
+  mic.classList.add('gravando');
+  ouvindo.style.display='flex';
+  novaSessao();
+}
 
+/* Cada sessao usa um objeto novo: o Chrome limpa os resultados ao reiniciar */
+function novaSessao(){
+  if(!ditando) return;
   rec = new SR();
   rec.lang = idioma.value;
   rec.continuous = true;
   rec.interimResults = true;
 
   rec.onresult = function(ev){
-    var parcial='';
-    for(var i=ev.resultIndex;i<ev.results.length;i++){
+    /* refaz o texto inteiro a cada evento, em vez de somar: evita repeticao */
+    var txt='', par='';
+    for(var i=0;i<ev.results.length;i++){
       var r=ev.results[i];
-      if(r.isFinal){
-        var t=r[0].transcript;
-        if(finalizado && !/\s$/.test(finalizado) && !/^\s/.test(t)) finalizado+=' ';
-        finalizado+=t;
-      } else {
-        parcial+=r[0].transcript;
-      }
+      if(r.isFinal) txt+=r[0].transcript; else par+=r[0].transcript;
     }
-    ta.value = base + finalizado + parcial;
+    sessaoFinal=txt;
+    tentativas=0;
+    ta.value = base + sessaoFinal + par;
     ta.scrollTop = ta.scrollHeight;
   };
 
@@ -218,7 +224,7 @@ function iniciarDitado(){
     var erro=ev.error||'';
     if(erro==='not-allowed'||erro==='service-not-allowed'){
       mostrarAviso('Microfone bloqueado. Libere a permissao no navegador.',false);
-      ditando=false; interfaceParado();
+      encerrarDitado();
     } else if(erro==='network'){
       mostrarAviso('Sem conexao para o ditado.',false);
     } else if(erro!=='no-speech' && erro!=='aborted'){
@@ -226,29 +232,33 @@ function iniciarDitado(){
     }
   };
 
-  /* o Chrome encerra sozinho depois de uma pausa; reiniciamos se ainda estiver ligado */
+  /* o Chrome encerra sozinho depois de uma pausa; consolidamos e abrimos outra sessao */
   rec.onend = function(){
-    if(ditando && tentativas < 5){
+    base = ta.value;
+    sessaoFinal='';
+    if(ditando){
       tentativas++;
-      try{ rec.start(); }catch(e){ ditando=false; interfaceParado(); }
-    } else if(!ditando){
+      if(tentativas < 8){
+        setTimeout(function(){ if(ditando) novaSessao(); }, 250);
+      } else {
+        mostrarAviso('Ditado parou por falta de fala. Toque em Ditar para retomar.',false);
+        encerrarDitado();
+      }
+    } else {
       interfaceParado();
     }
   };
 
-  try{ rec.start(); }catch(e){ return; }
-  ditando=true; tentativas=0;
-  mic.textContent='Parar';
-  mic.classList.add('gravando');
-  ouvindo.style.display='flex';
+  try{ rec.start(); }catch(e){ encerrarDitado(); }
 }
 
-function pararDitado(){
-  if(!ditando && !rec) return;
+function encerrarDitado(){
   ditando=false;
   if(rec){ try{ rec.stop(); }catch(e){} }
   interfaceParado();
 }
+
+function pararDitado(){ if(ditando) encerrarDitado(); }
 
 function interfaceParado(){
   mic.textContent='Ditar';
