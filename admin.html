@@ -19,6 +19,12 @@ button{font:inherit;font-size:15px;padding:8px 13px;border-radius:9px;border:1px
 button:active{transform:scale(.97)}
 button.principal{background:#2f6feb;border-color:#2f6feb;color:#fff}
 button.ativo{background:#2f6feb;border-color:#2f6feb;color:#fff}
+button.gravando{background:#e5484d;border-color:#e5484d;color:#fff}
+select.sel{font:inherit;font-size:15px;padding:8px 10px;border-radius:9px;border:1px solid #333846;
+ background:#1b1f27;color:#e9ecf1}
+.ouvindo{display:none;align-items:center;gap:7px;font-size:14px;color:#ff9a9a}
+.ouvindo i{width:9px;height:9px;border-radius:50%;background:#e5484d;animation:pisca 1s infinite}
+@keyframes pisca{50%{opacity:.25}}
 .rotulo{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.5;margin:0 0 8px}
 .linha{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
 textarea{width:100%;min-height:150px;font:inherit;font-size:18px;padding:14px;border-radius:10px;
@@ -63,6 +69,14 @@ a.botao{font:inherit;font-size:15px;padding:9px 13px;border-radius:9px;border:1p
 <p class="rotulo">Novo bloco</p>
 <textarea id="ta" placeholder="Cole aqui o bloco traduzido e publique (Ctrl+Enter)"></textarea>
 <div class="linha" style="margin-top:10px">
+ <button id="mic" onclick="alternarDitado()">Ditar</button>
+ <select id="idioma" class="sel" title="Idioma do ditado">
+  <option value="en-US">Inglês</option>
+  <option value="pt-BR">Português</option>
+ </select>
+ <span class="ouvindo" id="ouvindo"><i></i>ouvindo...</span>
+</div>
+<div class="linha" style="margin-top:10px">
  <button class="principal" onclick="publicar()">Publicar bloco</button>
  <a class="botao" href="index.html" target="_blank">Ver página do ouvinte</a>
 </div>
@@ -98,6 +112,7 @@ function postar(obj){
 function publicar(){
   var x=ta.value.trim();
   if(!x) return;
+  pararDitado();
   postar({action:'add',x:x}).then(function(){ ta.value=''; ta.focus(); setTimeout(carregar,300); });
 }
 
@@ -156,6 +171,90 @@ function carregar(){
 ta.addEventListener('keydown',function(e){
   if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();publicar();}
 });
+
+/* ===== ditado (Web Speech API, Chrome e Safari) ===== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const mic = document.getElementById('mic');
+const idioma = document.getElementById('idioma');
+const ouvindo = document.getElementById('ouvindo');
+let rec=null, ditando=false, base='', finalizado='', tentativas=0;
+
+if(!SR){
+  mic.style.display='none';
+  idioma.style.display='none';
+}
+
+function alternarDitado(){ if(ditando) pararDitado(); else iniciarDitado(); }
+
+function iniciarDitado(){
+  if(!SR || ditando) return;
+  base = ta.value;
+  if(base && !/\s$/.test(base)) base += ' ';
+  finalizado='';
+  tentativas=0;
+
+  rec = new SR();
+  rec.lang = idioma.value;
+  rec.continuous = true;
+  rec.interimResults = true;
+
+  rec.onresult = function(ev){
+    var parcial='';
+    for(var i=ev.resultIndex;i<ev.results.length;i++){
+      var r=ev.results[i];
+      if(r.isFinal){
+        var t=r[0].transcript;
+        if(finalizado && !/\s$/.test(finalizado) && !/^\s/.test(t)) finalizado+=' ';
+        finalizado+=t;
+      } else {
+        parcial+=r[0].transcript;
+      }
+    }
+    ta.value = base + finalizado + parcial;
+    ta.scrollTop = ta.scrollHeight;
+  };
+
+  rec.onerror = function(ev){
+    var erro=ev.error||'';
+    if(erro==='not-allowed'||erro==='service-not-allowed'){
+      mostrarAviso('Microfone bloqueado. Libere a permissao no navegador.',false);
+      ditando=false; interfaceParado();
+    } else if(erro==='network'){
+      mostrarAviso('Sem conexao para o ditado.',false);
+    } else if(erro!=='no-speech' && erro!=='aborted'){
+      mostrarAviso('Ditado: '+erro,false);
+    }
+  };
+
+  /* o Chrome encerra sozinho depois de uma pausa; reiniciamos se ainda estiver ligado */
+  rec.onend = function(){
+    if(ditando && tentativas < 5){
+      tentativas++;
+      try{ rec.start(); }catch(e){ ditando=false; interfaceParado(); }
+    } else if(!ditando){
+      interfaceParado();
+    }
+  };
+
+  try{ rec.start(); }catch(e){ return; }
+  ditando=true; tentativas=0;
+  mic.textContent='Parar';
+  mic.classList.add('gravando');
+  ouvindo.style.display='flex';
+}
+
+function pararDitado(){
+  if(!ditando && !rec) return;
+  ditando=false;
+  if(rec){ try{ rec.stop(); }catch(e){} }
+  interfaceParado();
+}
+
+function interfaceParado(){
+  mic.textContent='Ditar';
+  mic.classList.remove('gravando');
+  ouvindo.style.display='none';
+}
 
 carregar();
 setInterval(carregar,5000);
