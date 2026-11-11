@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Painel do intérprete</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+ background:#111318;color:#e9ecf1;font-size:16px;line-height:1.5}
+header{position:sticky;top:0;z-index:10;background:rgba(17,19,24,.94);backdrop-filter:blur(8px);
+ border-bottom:1px solid #242833;padding:12px 16px;display:flex;align-items:center;gap:10px}
+.titulo{font-size:13px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;flex:1}
+main{max-width:720px;margin:0 auto;padding:20px 16px 80px}
+button{font:inherit;font-size:15px;padding:8px 13px;border-radius:9px;border:1px solid #333846;
+ background:#1b1f27;color:#e9ecf1;cursor:pointer}
+button:active{transform:scale(.97)}
+button.principal{background:#2f6feb;border-color:#2f6feb;color:#fff}
+button.ativo{background:#2f6feb;border-color:#2f6feb;color:#fff}
+.rotulo{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.5;margin:0 0 8px}
+.linha{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+textarea{width:100%;min-height:150px;font:inherit;font-size:18px;padding:14px;border-radius:10px;
+ border:1px solid #333846;background:#1b1f27;color:#e9ecf1;resize:vertical}
+input[type=text]{width:100%;font:inherit;font-size:16px;padding:11px 12px;border-radius:10px;
+ border:1px solid #333846;background:#1b1f27;color:#e9ecf1}
+.item{border:1px solid #242833;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:15px;
+ display:flex;align-items:flex-start;gap:10px}
+.item .hora{display:block;margin:0 0 3px;font-size:11px;opacity:.45}
+.item .txt{flex:1;min-width:0;white-space:pre-wrap}
+.item button{padding:3px 9px;font-size:13px;white-space:nowrap;flex:0 0 auto}
+a.botao{font:inherit;font-size:15px;padding:9px 13px;border-radius:9px;border:1px solid #333846;
+ background:#1b1f27;color:#e9ecf1;text-decoration:none;display:inline-block}
+.vazio{opacity:.45;margin-top:10px}
+.aviso{font-size:14px;padding:8px 12px;border-radius:8px;background:#3a1d1f;color:#ffb4b4;
+ margin-bottom:14px;display:none}
+.ok{background:#16301f;color:#8ce0a8}
+</style>
+</head>
+<body>
+
+<header>
+ <span class="titulo">Painel do intérprete</span>
+ <button onclick="limparTudo()">Limpar tudo</button>
+</header>
+
+<main>
+<div class="aviso" id="aviso"></div>
+
+<p class="rotulo">Tela do ouvinte</p>
+<div class="linha">
+ <button data-e="espera" onclick="mudarEstado('espera')">Espera</button>
+ <button data-e="ao-vivo" onclick="mudarEstado('ao-vivo')">Ao vivo</button>
+ <button data-e="pausa" onclick="mudarEstado('pausa')">Pausa</button>
+ <button data-e="fim" onclick="mudarEstado('fim')">Encerrado</button>
+</div>
+<input type="text" id="msg" placeholder="Mensagem opcional na espera ou na pausa">
+<div class="linha" style="margin-top:10px">
+ <button onclick="mudarEstado(estado)">Aplicar mensagem</button>
+</div>
+
+<p class="rotulo">Novo bloco</p>
+<textarea id="ta" placeholder="Cole aqui o bloco traduzido e publique (Ctrl+Enter)"></textarea>
+<div class="linha" style="margin-top:10px">
+ <button class="principal" onclick="publicar()">Publicar bloco</button>
+ <a class="botao" href="index.html" target="_blank">Ver página do ouvinte</a>
+</div>
+
+<p class="rotulo">Publicados</p>
+<div id="itens"><div class="vazio">Carregando...</div></div>
+</main>
+
+<script src="config.js"></script>
+<script>
+/* A URL da API e a chave ficam em config.js */
+const CONFIG = window.CONFIG || {};
+const BASE = CONFIG.api || '/exec';
+const CHAVE = CONFIG.chave || 'igreja2026';
+
+const ta=document.getElementById('ta'), msg=document.getElementById('msg');
+const aviso=document.getElementById('aviso');
+let estado='espera';
+
+function mostrarAviso(txt, bom){
+  aviso.textContent=txt;
+  aviso.className='aviso'+(bom?' ok':'');
+  aviso.style.display='block';
+  setTimeout(function(){aviso.style.display='none';},4000);
+}
+
+function postar(obj){
+  var corpo=Object.assign({},obj,{k:CHAVE});
+  return fetch(BASE,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(corpo)}).catch(function(){});
+}
+
+function publicar(){
+  var x=ta.value.trim();
+  if(!x) return;
+  postar({action:'add',x:x}).then(function(){ ta.value=''; ta.focus(); setTimeout(carregar,300); });
+}
+
+function mudarEstado(e){
+  estado=e;
+  pintarEstado();
+  postar({action:'estado',estado:e,mensagem:msg.value.trim()}).then(function(){
+    mostrarAviso('Tela do ouvinte: '+e,true); setTimeout(carregar,300); });
+}
+
+function apagar(id){
+  postar({action:'apagar',id:id}).then(function(){setTimeout(carregar,300);});
+}
+
+function limparTudo(){
+  if(!confirm('Apagar todos os blocos?')) return;
+  postar({action:'limpar'}).then(function(){setTimeout(carregar,300);});
+}
+
+function pintarEstado(){
+  [].forEach.call(document.querySelectorAll('[data-e]'),function(b){
+    b.classList.toggle('ativo', b.dataset.e===estado);
+  });
+}
+
+function carregar(){
+  fetch(BASE+'?action=blocks&since=0',{cache:'no-store'})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     if(d.erro){mostrarAviso(d.erro);return;}
+     estado=(d.estado&&d.estado.estado)||'espera';
+     if(document.activeElement!==msg) msg.value=(d.estado&&d.estado.mensagem)||'';
+     pintarEstado();
+
+     var box=document.getElementById('itens');
+     box.innerHTML='';
+     if(!d.blocks||!d.blocks.length){
+       box.innerHTML='<div class="vazio">Nada publicado ainda.</div>';
+       return;
+     }
+     d.blocks.forEach(function(b){
+       var el=document.createElement('div'); el.className='item';
+       var caixa=document.createElement('div'); caixa.className='txt';
+       var h=document.createElement('span'); h.className='hora';
+       h.textContent=new Date(b.t).toLocaleTimeString('pt-BR'); caixa.appendChild(h);
+       var p=document.createElement('span'); p.textContent=b.x; caixa.appendChild(p);
+       el.appendChild(caixa);
+       var del=document.createElement('button'); del.textContent='apagar';
+       del.onclick=function(){apagar(b.id);};
+       el.appendChild(del); box.appendChild(el);
+     });
+   })
+   .catch(function(){ mostrarAviso('Sem conexao com o servico.'); });
+}
+
+ta.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();publicar();}
+});
+
+carregar();
+setInterval(carregar,5000);
+</script>
+</body>
+</html>
