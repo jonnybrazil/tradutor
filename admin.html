@@ -95,6 +95,11 @@ const CHAVE = CONFIG.chave || 'igreja2026';
 const ta=document.getElementById('ta'), msg=document.getElementById('msg');
 const aviso=document.getElementById('aviso');
 let estado='espera';
+let msgSujo=false;      /* voce digitou algo que ainda nao foi enviado */
+let seq=0;              /* descarta respostas antigas da consulta */
+let bloqueioAte=0;      /* ignora o estado do servidor por alguns segundos apos trocar */
+
+msg.addEventListener('input',function(){ msgSujo=true; });
 
 function mostrarAviso(txt, bom){
   aviso.textContent=txt;
@@ -119,8 +124,13 @@ function publicar(){
 function mudarEstado(e){
   estado=e;
   pintarEstado();
-  postar({action:'estado',estado:e,mensagem:msg.value.trim()}).then(function(){
-    mostrarAviso('Tela do ouvinte: '+e,true); setTimeout(carregar,300); });
+  var texto=msg.value.trim();
+  bloqueioAte=Date.now()+9000;
+  postar({action:'estado',estado:e,mensagem:texto}).then(function(){
+    msgSujo=false;
+    mostrarAviso('Tela do ouvinte: '+e,true);
+    setTimeout(carregar,1500);
+  });
 }
 
 function apagar(id){
@@ -139,13 +149,20 @@ function pintarEstado(){
 }
 
 function carregar(){
+  var meu=++seq;
   fetch(BASE+'?action=blocks&since=0',{cache:'no-store'})
    .then(function(r){return r.json();})
    .then(function(d){
+     if(meu!==seq) return;                 /* chegou uma resposta mais nova antes */
      if(d.erro){mostrarAviso(d.erro);return;}
-     estado=(d.estado&&d.estado.estado)||'espera';
-     if(document.activeElement!==msg) msg.value=(d.estado&&d.estado.mensagem)||'';
-     pintarEstado();
+
+     /* nao deixa uma leitura antiga desfazer a troca de estado que voce acabou de fazer,
+        nem apagar a mensagem que voce esta digitando */
+     if(Date.now()>=bloqueioAte){
+       estado=(d.estado&&d.estado.estado)||'espera';
+       if(!msgSujo) msg.value=(d.estado&&d.estado.mensagem)||'';
+       pintarEstado();
+     }
 
      var box=document.getElementById('itens');
      box.innerHTML='';
@@ -178,6 +195,14 @@ const mic = document.getElementById('mic');
 const idioma = document.getElementById('idioma');
 const ouvindo = document.getElementById('ouvindo');
 let rec=null, ditando=false, base='', sessaoFinal='', tentativas=0;
+let primeiroFinal=true, ultimoFinalAnterior='';
+
+function norm(s){ return String(s||'').replace(/\s+/g,' ').trim().toLowerCase(); }
+function juntar(a,b){
+  if(!a) return b||'';
+  if(!b) return a;
+  return (/[\s]$/.test(a) || /^\s/.test(b)) ? a+b : a+' '+b;
+}
 
 if(!SR){
   mic.style.display='none';
@@ -192,6 +217,8 @@ function iniciarDitado(){
   if(base && !/\s$/.test(base)) base += ' ';
   sessaoFinal='';
   tentativas=0;
+  primeiroFinal=true;
+  ultimoFinalAnterior='';
   ditando=true;
   mic.textContent='Parar';
   mic.classList.add('gravando');
@@ -212,11 +239,50 @@ function novaSessao(){
     var txt='', par='';
     for(var i=0;i<ev.results.length;i++){
       var r=ev.results[i];
-      if(r.isFinal) txt+=r[0].transcript; else par+=r[0].transcript;
+      var t=r[0].transcript;
+      if(r.isFinal){
+        var nt=norm(t), nu=norm(ultimoFinalAnterior);
+        if(primeiroFinal){
+          primeiroFinal=false;
+          /* o Chrome reenvia a ultima frase quando reinicia a sessao */
+          if(nu && nt===nu) continue;
+          if(nu && nt.indexOf(nu)===0){
+            var i=t.toLowerCase().indexOf(ultimoFinalAnterior.toLowerCase());
+            if(i===0){
+              t=t.slice(ultimoFinalAnterior.length);
+              if(!norm(t)) continue;
+              nt=norm(t);
+            }
+          }
+        }
+        var ntxt=norm(txt);
+        /* o mesmo trecho pode chegar como final duas vezes seguidas */
+        if(ntxt && nt===ntxt) continue;
+        /* ... ou repetir o anterior e continuar a frase */
+        if(ntxt && nt.indexOf(ntxt)===0){ txt=t; continue; }
+        /* ... ou ser um pedaco que ja esta no texto */
+        if(ntxt && ntxt.indexOf(nt)===0) continue;
+        txt=juntar(txt,t);
+      } else {
+        par=juntar(par,t);
+      }
     }
+    /* o Chrome as vezes devolve o mesmo trecho como parcial e como final */
+    if(par && txt){
+      var np=norm(par), nt=norm(txt);
+      if(np && nt && (np.indexOf(nt)===0 || nt.slice(-np.length)===np)) par='';
+    }
+
+    /* se a lista de resultados recomecou no meio da sessao, guarda o que ja havia */
+    var ntxtSessao=norm(sessaoFinal), nTxt=norm(txt);
+    if(ntxtSessao && nTxt && nTxt.indexOf(ntxtSessao)!==0){
+      base=juntar(base,sessaoFinal);
+      sessaoFinal='';
+    }
+
     sessaoFinal=txt;
     tentativas=0;
-    ta.value = base + sessaoFinal + par;
+    ta.value = juntar(juntar(base,sessaoFinal),par);
     ta.scrollTop = ta.scrollHeight;
   };
 
@@ -235,7 +301,9 @@ function novaSessao(){
   /* o Chrome encerra sozinho depois de uma pausa; consolidamos e abrimos outra sessao */
   rec.onend = function(){
     base = ta.value;
+    if(sessaoFinal) ultimoFinalAnterior=sessaoFinal;
     sessaoFinal='';
+    primeiroFinal=true;
     if(ditando){
       tentativas++;
       if(tentativas < 8){
