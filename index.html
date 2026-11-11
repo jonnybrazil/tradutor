@@ -66,7 +66,7 @@ body.claro .overlay{background:#fbfbf9}
 <div class="overlay" id="overlay">
  <div class="cartao">
   <div class="pulso" id="ov-spinner"></div>
-  <h2 id="ov-titulo"></h2><p id="ov-texto"></p>
+  <h2 id="ov-titulo">A tradução começa em instantes</h2><p id="ov-texto"></p>
  </div>
 </div>
 
@@ -75,9 +75,9 @@ body.claro .overlay{background:#fbfbf9}
 /* A URL da API e a chave ficam em config.js */
 const CONFIG = window.CONFIG || {};
 const BASE = CONFIG.api || '/exec';
-const INTERVALO = 2000;      /* ms entre consultas */
+const INTERVALO = 4000;      /* ms entre consultas */
 
-let ultimo=0, fixo=true, tamanho=21, primeira=true;
+let ultimo=0, fixo=true, tamanho=21, primeira=true, buscando=false;
 const main=document.getElementById('lista'), novo=document.getElementById('novo');
 const status=document.getElementById('st'), aviso=document.getElementById('aviso');
 const overlay=document.getElementById('overlay'), ovTitulo=document.getElementById('ov-titulo');
@@ -120,6 +120,8 @@ function esconderOverlay(){overlay.classList.add('escondido');}
 function limparTudo(){main.innerHTML=''; ultimo=0; try{localStorage.removeItem('blocos_cache');}catch(e){}}
 
 function carregar(){
+  if(buscando) return;
+  buscando=true;
   fetch(BASE+'?action=blocks&since='+ultimo,{cache:'no-store'})
    .then(function(r){if(!r.ok) throw new Error('http');return r.json();})
    .then(function(d){
@@ -152,7 +154,8 @@ function carregar(){
      if(!main.querySelector('.bloco')){
        if(!doCache()) mostrarOverlay('off','Tentando reconectar...');
      }
-   });
+   })
+   .then(function(){ buscando=false; });
 }
 
 document.getElementById('maior').onclick=function(){tamanho=Math.min(34,tamanho+2);aplicar();};
@@ -173,7 +176,8 @@ document.getElementById('copiar').onclick=function(){
 
 doCache();
 carregar();
-setInterval(carregar,INTERVALO);
+setInterval(function(){ if(!document.hidden) carregar(); },INTERVALO);
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) carregar(); });
 </script>
 </body>
 </html>
