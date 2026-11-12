@@ -61,11 +61,6 @@ a.botao{font:inherit;font-size:15px;padding:9px 13px;border-radius:9px;border:1p
  <button data-e="pausa" onclick="mudarEstado('pausa')">Pausa</button>
  <button data-e="fim" onclick="mudarEstado('fim')">Encerrado</button>
 </div>
-<input type="text" id="msg" placeholder="Mensagem só desta troca (vazio = usa o texto das telas)">
-<div class="linha" style="margin-top:10px">
- <button onclick="mudarEstado(estado)">Aplicar mensagem</button>
-</div>
-
 <p class="rotulo">Textos das telas</p>
 <input type="text" id="tx-espera" placeholder="Espera (vazio = tela sem texto)">
 <input type="text" id="tx-pausa" placeholder="Pausa" style="margin-top:8px">
@@ -100,17 +95,14 @@ const CONFIG = window.CONFIG || {};
 const BASE = CONFIG.api || '/exec';
 const CHAVE = CONFIG.chave || 'igreja2026';
 
-const ta=document.getElementById('ta'), msg=document.getElementById('msg');
+const ta=document.getElementById('ta');
 const aviso=document.getElementById('aviso');
 const txEspera=document.getElementById('tx-espera'), txPausa=document.getElementById('tx-pausa'),
       txFim=document.getElementById('tx-fim');
 let estado='espera';
-let msgSujo=false;      /* voce digitou algo que ainda nao foi enviado */
 let seq=0;              /* descarta respostas antigas da consulta */
 let bloqueioAte=0;      /* ignora o estado do servidor por alguns segundos apos trocar */
 let editando=false;     /* um bloco esta aberto para edicao: nao redesenhar a lista */
-
-msg.addEventListener('input',function(){ msgSujo=true; });
 
 function mostrarAviso(txt, bom){
   aviso.textContent=txt;
@@ -147,11 +139,9 @@ function publicar(){
 function mudarEstado(e){
   estado=e;
   pintarEstado();
-  var texto=msg.value.trim();
   bloqueioAte=Date.now()+9000;
-  postar({action:'estado',estado:e,mensagem:texto}).then(function(d){
+  postar({action:'estado',estado:e}).then(function(d){
     if(d && d.erro){ bloqueioAte=0; mostrarAviso('Nao enviado: '+d.erro,false); return; }
-    msgSujo=false;
     mostrarAviso('Tela do ouvinte: '+e,true);
     setTimeout(carregar,1500);
   });
@@ -205,11 +195,9 @@ function carregar(){
      if(meu!==seq) return;                 /* chegou uma resposta mais nova antes */
      if(d.erro){mostrarAviso(d.erro);return;}
 
-     /* nao deixa uma leitura antiga desfazer a troca de estado que voce acabou de fazer,
-        nem apagar a mensagem que voce esta digitando */
+     /* nao deixa uma leitura antiga desfazer a troca de estado que voce acabou de fazer */
      if(Date.now()>=bloqueioAte){
        estado=(d.estado&&d.estado.estado)||'espera';
-       if(!msgSujo) msg.value=(d.estado&&d.estado.mensagem)||'';
        pintarEstado();
      }
 
