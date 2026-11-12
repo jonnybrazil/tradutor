@@ -61,12 +61,10 @@ a.botao{font:inherit;font-size:15px;padding:9px 13px;border-radius:9px;border:1p
  <button data-e="pausa" onclick="mudarEstado('pausa')">Pausa</button>
  <button data-e="fim" onclick="mudarEstado('fim')">Encerrado</button>
 </div>
-<p class="rotulo">Textos das telas</p>
-<input type="text" id="tx-espera" placeholder="Espera (vazio = tela sem texto)">
-<input type="text" id="tx-pausa" placeholder="Pausa" style="margin-top:8px">
-<input type="text" id="tx-fim" placeholder="Encerrado" style="margin-top:8px">
+<p class="rotulo">Texto da tela selecionada</p>
+<input type="text" id="tx-atual" placeholder="Texto de espera">
 <div class="linha" style="margin-top:10px">
- <button onclick="salvarTextos()">Salvar textos</button>
+ <button id="salvarTexto" onclick="salvarTexto()">Salvar texto</button>
 </div>
 
 <p class="rotulo">Novo bloco</p>
@@ -97,9 +95,9 @@ const CHAVE = CONFIG.chave || 'igreja2026';
 
 const ta=document.getElementById('ta');
 const aviso=document.getElementById('aviso');
-const txEspera=document.getElementById('tx-espera'), txPausa=document.getElementById('tx-pausa'),
-      txFim=document.getElementById('tx-fim');
+const txAtual=document.getElementById('tx-atual'), salvarTextoBtn=document.getElementById('salvarTexto');
 let estado='espera';
+let textos={espera:'',pausa:'',fim:''};
 let seq=0;              /* descarta respostas antigas da consulta */
 let bloqueioAte=0;      /* ignora o estado do servidor por alguns segundos apos trocar */
 let editando=false;     /* um bloco esta aberto para edicao: nao redesenhar a lista */
@@ -138,6 +136,7 @@ function publicar(){
 
 function mudarEstado(e){
   estado=e;
+  atualizarCampoTexto();
   pintarEstado();
   bloqueioAte=Date.now()+9000;
   postar({action:'estado',estado:e}).then(function(d){
@@ -162,22 +161,36 @@ function limparTudo(){
   });
 }
 
-/* textos das telas: ficam no backend, nao na pagina */
+/* um campo por vez: o texto pertence ao estado selecionado */
+function atualizarCampoTexto(){
+  var editavel=(estado==='espera'||estado==='pausa'||estado==='fim');
+  txAtual.value=editavel?(textos[estado]||''):'';
+  txAtual.disabled=!editavel;
+  salvarTextoBtn.disabled=!editavel;
+  txAtual.placeholder=estado==='espera'?'Texto de espera':(estado==='pausa'?'Texto de pausa':(estado==='fim'?'Texto de encerrado':'Ao vivo não tem texto'));
+}
+
 function carregarTextos(){
   fetch(BASE+'?action=textos',{cache:'no-store'})
    .then(function(r){return r.json();})
    .then(function(d){
      if(!d || d.erro) return;
-     txEspera.value=d.espera||''; txPausa.value=d.pausa||''; txFim.value=d.fim||'';
+     textos={espera:d.espera||'',pausa:d.pausa||'',fim:d.fim||''};
+     atualizarCampoTexto();
    })
    .catch(function(){});
 }
 
-function salvarTextos(){
-  postar({action:'textos',textos:{espera:txEspera.value,pausa:txPausa.value,fim:txFim.value}})
+function salvarTexto(){
+  if(!(estado==='espera'||estado==='pausa'||estado==='fim')) return;
+  textos[estado]=txAtual.value.trim();
+  postar({action:'textos',textos:textos})
    .then(function(d){
      if(d && d.erro){ mostrarAviso('Nao salvo: '+d.erro,false); return; }
-     mostrarAviso('Textos salvos.',true);
+     textos=d.textos||textos;
+     mostrarAviso('Texto de '+estado+' salvo.',true);
+     /* elimina qualquer mensagem antiga armazenada para esse estado */
+     postar({action:'estado',estado:estado});
    });
 }
 
@@ -417,6 +430,7 @@ function interfaceParado(){
 
 carregar();
 carregarTextos();
+atualizarCampoTexto();
 setInterval(carregar,5000);
 </script>
 </body>
